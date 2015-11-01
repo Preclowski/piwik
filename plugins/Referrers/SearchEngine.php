@@ -31,7 +31,7 @@ class SearchEngine extends Singleton
      *
      * @return array  Array of ( URL => array( searchEngineName, keywordParameter, path, charset ) )
      */
-    public function getSearchEngineDefinitions()
+    public function getDefinitions()
     {
         $cache = Cache::getEagerCache();
         $cacheId = 'SearchEngine-' . self::OPTION_STORAGE_NAME;
@@ -39,27 +39,26 @@ class SearchEngine extends Singleton
         if ($cache->contains($cacheId)) {
             $list = $cache->fetch($cacheId);
         } else {
-            $list = $this->loadSearchEngineDefinitions();
+            $list = $this->loadDefinitions();
             $cache->save($cacheId, $list);
         }
 
         return $list;
     }
 
-    private function loadSearchEngineDefinitions()
+    private function loadDefinitions()
     {
         if ($this->definitionList === null) {
             // Read first from the auto-updated list in database
             $list = Option::get(self::OPTION_STORAGE_NAME);
 
             if ($list) {
-                $this->definitionList = unserialize($list);
+                $this->definitionList = unserialize(base64_decode($list));
             } else {
                 // Fallback to reading the bundled list
                 $yml = file_get_contents(PIWIK_INCLUDE_PATH . self::DEFINITION_FILE);
                 $this->definitionList = $this->loadYmlData($yml);
-                Option::set(self::OPTION_STORAGE_NAME, serialize($this->definitionList));
-
+                Option::set(self::OPTION_STORAGE_NAME, base64_encode(serialize($this->definitionList)));
             }
         }
 
@@ -102,18 +101,16 @@ class SearchEngine extends Singleton
     /**
      * Returns list of search engines by name
      *
-     * @see core/DataFiles/SearchEngines.php
-     *
      * @return array  Array of ( searchEngineName => URL )
      */
-    public function getSearchEngineNames()
+    public function getNames()
     {
         $cacheId = 'SearchEngine.getSearchEngineNames';
         $cache = Cache::getTransientCache();
         $nameToUrl = $cache->fetch($cacheId);
 
         if (empty($nameToUrl)) {
-            $searchEngines = $this->getSearchEngineDefinitions();
+            $searchEngines = $this->getDefinitions();
 
             $nameToUrl = array();
             foreach ($searchEngines as $url => $info) {
@@ -135,7 +132,7 @@ class SearchEngine extends Singleton
      */
     public function getDefinitionByHost($host)
     {
-        $searchEngines = $this->getSearchEngineDefinitions();
+        $searchEngines = $this->getDefinitions();
 
         if (!array_key_exists($host, $searchEngines)) {
             return array();
@@ -201,7 +198,6 @@ class SearchEngine extends Singleton
      * - strtolowered: "QUErY test!" will return "query test!"
      * - trimmed: extra spaces before and after are removed
      *
-     * Lists of supported search engines can be found in /core/DataFiles/SearchEngines.php
      * The function returns false when a keyword couldn't be found.
      *     eg. if the url is "http://www.google.com/partners.html" this will return false,
      *       as the google keyword parameter couldn't be found.
@@ -241,7 +237,7 @@ class SearchEngine extends Singleton
             $query .= '&' . $referrerParsed['fragment'];
         }
 
-        $searchEngines = $this->getSearchEngineDefinitions();
+        $searchEngines = $this->getDefinitions();
 
         $hostPattern = UrlHelper::getLossyUrl($referrerHost);
         /*
@@ -420,7 +416,7 @@ class SearchEngine extends Singleton
      */
     public function getUrlFromName($name)
     {
-        $searchEngineNames = $this->getSearchEngineNames();
+        $searchEngineNames = $this->getNames();
         if (isset($searchEngineNames[$name])) {
             $url = 'http://' . $searchEngineNames[$name];
         } else {
@@ -482,7 +478,7 @@ class SearchEngine extends Singleton
         $keyword = urlencode($keyword);
         $keyword = str_replace(urlencode('+'), urlencode(' '), $keyword);
         $host = substr($url, strpos($url, '//') + 2);
-        $path = SearchEngine::getInstance()->getBackLinkPatternByHost($host);
+        $path = $this->getBackLinkPatternByHost($host);
         if (empty($path)) {
             return false;
         }
